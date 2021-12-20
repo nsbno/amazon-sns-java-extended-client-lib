@@ -72,21 +72,23 @@ public class AmazonSNSExtendedClientTest {
     @Test
     public void testPublishLargeMessageS3IsUsedWithS3Key() {
         String messageBody = generateStringWithLength(MORE_THAN_SNS_SIZE_LIMIT);
-
-        PublishRequest publishRequest = new PublishRequest(SNS_TOPIC_ARN, messageBody);
         HashMap<String, MessageAttributeValue> attrs = new HashMap<>();
-        attrs.put("S3Key", new MessageAttributeValue().withStringValue("value"));
-        publishRequest.setMessageAttributes(attrs);
+        attrs.put("S3Key", MessageAttributeValue.builder().stringValue("value").build());
+        PublishRequest publishRequest = PublishRequest.builder()
+                .topicArn(SNS_TOPIC_ARN)
+                .message(messageBody)
+                .messageAttributes(attrs)
+                .build();
         extendedSnsWithDefaultConfig.publish(publishRequest);
 
-        verify(mockS3, times(1)).putObject(any(PutObjectRequest.class));
+        verify(mockS3, times(1)).putObject(any(PutObjectRequest.class), any(RequestBody.class));
         ArgumentCaptor<PublishRequest> publishRequestCaptor = ArgumentCaptor.forClass(PublishRequest.class);
         verify(mockSnsBackend, times(1)).publish(publishRequestCaptor.capture());
 
-        Map<String, MessageAttributeValue> attributes = publishRequestCaptor.getValue().getMessageAttributes();
-        Assert.assertEquals("Number", attributes.get(SQSExtendedClientConstants.RESERVED_ATTRIBUTE_NAME).getDataType());
+        Map<String, MessageAttributeValue> attributes = publishRequestCaptor.getValue().messageAttributes();
+        Assert.assertEquals("Number", attributes.get(SQSExtendedClientConstants.RESERVED_ATTRIBUTE_NAME).dataType());
 
-        Assert.assertEquals(messageBody.length(), (int) Integer.valueOf(attributes.get(SQSExtendedClientConstants.RESERVED_ATTRIBUTE_NAME).getStringValue()));
+        Assert.assertEquals(messageBody.length(), (int) Integer.valueOf(attributes.get(SQSExtendedClientConstants.RESERVED_ATTRIBUTE_NAME).stringValue()));
     }
 
     @Test
@@ -126,7 +128,7 @@ public class AmazonSNSExtendedClientTest {
     }
 
     @Test
-    public void testPublishMessageWithJSONMessageStructureThrowsAmazonClientException() {
+    public void testPublishMessageWithJSONMessageStructureThrowsSdkClientException() {
         String messageBody = "{\"key1\":\"value1\",\"key2\":8.0}";
 
         PublishRequest publishRequest = PublishRequest.builder()
@@ -205,7 +207,7 @@ public class AmazonSNSExtendedClientTest {
     }
 
     @Test
-    public void testThrowAmazonClientExceptionWhenS3ThrowsSdkClientException() {
+    public void testThrowSdkClientExceptionWhenS3ThrowsSdkClientException() {
         when(mockS3.putObject(any(PutObjectRequest.class), any(RequestBody.class))).thenThrow(SdkClientException.class);
 
         String messageBody = generateStringWithLength(MORE_THAN_SNS_SIZE_LIMIT);
@@ -221,7 +223,7 @@ public class AmazonSNSExtendedClientTest {
     }
 
     @Test
-    public void testThrowAmazonClientExceptionWhenReservedAttributeNameIsAlreadyUsed() {
+    public void testThrowSdkClientExceptionWhenReservedAttributeNameIsAlreadyUsed() {
         String messageBody = generateStringWithLength(MORE_THAN_SNS_SIZE_LIMIT);
 
         MessageAttributeValue messageAttributeValue = MessageAttributeValue.builder()
@@ -248,7 +250,7 @@ public class AmazonSNSExtendedClientTest {
     }
 
     @Test
-    public void testThrowAmazonClientExceptionWhenThereAreMoreThanAllowedMessageAttributes() {
+    public void testThrowSdkClientExceptionWhenThereAreMoreThanAllowedMessageAttributes() {
         int attributeNumber = SQSExtendedClientConstants.MAX_ALLOWED_ATTRIBUTES + 1;
         String messageBody = generateStringWithLength(MORE_THAN_SNS_SIZE_LIMIT);
 
@@ -276,7 +278,7 @@ public class AmazonSNSExtendedClientTest {
     }
 
     @Test
-    public void testThrowAmazonClientExceptionWhenSizeOfMessageAttributeKeyIsLargerThanThreshold() {
+    public void testThrowSdkClientExceptionWhenSizeOfMessageAttributeKeyIsLargerThanThreshold() {
         String messageBody = generateStringWithLength(SNSExtendedClientConfiguration.SNS_DEFAULT_MESSAGE_SIZE);
         String attributeKey = generateStringWithLength(MORE_THAN_SNS_SIZE_LIMIT);
         String attributeValue = generateStringWithLength(LESS_THAN_SNS_SIZE_LIMIT);
@@ -305,7 +307,7 @@ public class AmazonSNSExtendedClientTest {
     }
 
     @Test
-    public void testThrowAmazonClientExceptionWhenSizeOfMessageAttributeValueIsLargerThanThreshold() {
+    public void testThrowSdkClientExceptionWhenSizeOfMessageAttributeValueIsLargerThanThreshold() {
         String messageBody = generateStringWithLength(SNSExtendedClientConfiguration.SNS_DEFAULT_MESSAGE_SIZE);
         String attributeKey = generateStringWithLength(LESS_THAN_SNS_SIZE_LIMIT);
         String attributeValue = generateStringWithLength(MORE_THAN_SNS_SIZE_LIMIT);
