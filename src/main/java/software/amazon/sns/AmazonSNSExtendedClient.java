@@ -1,17 +1,15 @@
 package software.amazon.sns;
 
 import com.amazon.sqs.javamessaging.SQSExtendedClientConstants;
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.util.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
 import software.amazon.awssdk.awscore.AwsRequestOverrideConfiguration;
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.core.SdkBytes;
-import software.amazon.awssdk.core.exception.SdkClientException;
-import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.sns.SnsClient;
 import software.amazon.awssdk.services.sns.model.*;
-import software.amazon.awssdk.utils.StringUtils;
 import software.amazon.payloadoffloading.*;
 
 import java.util.HashMap;
@@ -23,6 +21,7 @@ public class AmazonSNSExtendedClient extends AmazonSNSExtendedClientBase {
     static final String USER_AGENT_HEADER = Util.getUserAgentHeader(AmazonSNSExtendedClient.class.getSimpleName());
 
     private static final Log LOGGER = LogFactory.getLog(AmazonSNSExtendedClient.class);
+    private static final String S3_KEY = "S3Key";
     private PayloadStore payloadStore;
     private SNSExtendedClientConfiguration snsExtendedClientConfiguration;
 
@@ -43,14 +42,13 @@ public class AmazonSNSExtendedClient extends AmazonSNSExtendedClientBase {
         super(snsClient);
 
         this.snsExtendedClientConfiguration = snsExtendedClientConfiguration;
-        S3Dao s3Dao = new S3Dao(this.snsExtendedClientConfiguration.getS3Client());
+        S3Dao s3Dao = new S3Dao(this.snsExtendedClientConfiguration.getAmazonS3Client());
         this.payloadStore = new S3BackedPayloadStore(s3Dao, this.snsExtendedClientConfiguration.getS3BucketName());
     }
 
     /**
      * <p>
-     * Sends a message to an Amazon SNS topic, a text message (SMS message) directly to a phone number, or a message to
-     * a mobile platform endpoint (when you specify the <code>TargetArn</code>).
+     * Sends a message to an Amazon SNS topic or sends a text message (SMS message) directly to a phone number.
      * </p>
      * <p>
      * If you send a message to a topic, Amazon SNS delivers the message to each endpoint that is subscribed to the
@@ -67,14 +65,9 @@ public class AmazonSNSExtendedClient extends AmazonSNSExtendedClientBase {
      * </p>
      * <p>
      * For more information about formatting messages, see <a
-     * href="https://docs.aws.amazon.com/sns/latest/dg/mobile-push-send-custommessage.html">Send Custom
-     * Platform-Specific Payloads in Messages to Mobile Devices</a>.
+     * href="http://docs.aws.amazon.com/sns/latest/dg/mobile-push-send-custommessage.html">Send Custom Platform-Specific
+     * Payloads in Messages to Mobile Devices</a>.
      * </p>
-     * <important>
-     * <p>
-     * You can publish messages only to topics and endpoints in the same AWS Region.
-     * </p>
-     * </important>
      *
      * @param publishRequest Input for Publish action.
      * @return Result of the Publish operation returned by the service.
@@ -85,42 +78,21 @@ public class AmazonSNSExtendedClient extends AmazonSNSExtendedClientBase {
      * @throws EndpointDisabledException            Exception error indicating endpoint disabled.
      * @throws PlatformApplicationDisabledException Exception error indicating platform application disabled.
      * @throws AuthorizationErrorException          Indicates that the user has been denied access to the requested resource.
-     * @throws KmsDisabledException                 The request was rejected because the specified customer master key (CMK) isn't enabled.
-     * @throws KmsInvalidStateException             The request was rejected because the state of the specified resource isn't valid for this request. For
-     *                                              more information, see <a href="https://docs.aws.amazon.com/kms/latest/developerguide/key-state.html">How
-     *                                              Key State Affects Use of a Customer Master Key</a> in the <i>AWS Key Management Service Developer
-     *                                              Guide</i>.
-     * @throws KmsNotFoundException                 The request was rejected because the specified entity or resource can't be found.
-     * @throws KmsOptInRequiredException            The AWS access key ID needs a subscription for the service.
-     * @throws KmsThrottlingException               The request was denied due to request throttling. For more information about throttling, see <a
-     *                                              href="https://docs.aws.amazon.com/kms/latest/developerguide/limits.html#requests-per-second">Limits</a>
-     *                                              in the <i>AWS Key Management Service Developer Guide.</i>
-     * @throws KmsAccessDeniedException             The ciphertext references a key that doesn't exist or that you don't have access to.
-     * @throws InvalidSecurityException             The credential signature isn't valid. You must use an HTTPS endpoint and sign your request using
-     *                                              Signature Version 4.
-     * @throws SdkException                         Base class for all exceptions that can be thrown by the SDK (both service and client). Can be used for
-     *                                              catch all scenarios.
-     * @throws SdkClientException                   If any client side error occurs such as an IO related failure, failure to get credentials, etc.
-     * @throws SnsException                         Base class for all service exceptions. Unknown exceptions will be thrown as an instance of this type.
-     * @sample SnsClient.Publish
+     * @sample AmazonSNS.Publish
      * @see <a href="http://docs.aws.amazon.com/goto/WebAPI/sns-2010-03-31/Publish" target="_top">AWS API
      * Documentation</a>
      */
     @Override
-    public PublishResponse publish(PublishRequest publishRequest) throws InvalidParameterException,
-            InvalidParameterValueException, InternalErrorException, NotFoundException, EndpointDisabledException,
-            PlatformApplicationDisabledException, AuthorizationErrorException, KmsDisabledException, KmsInvalidStateException,
-            KmsNotFoundException, KmsOptInRequiredException, KmsThrottlingException, KmsAccessDeniedException,
-            InvalidSecurityException, AwsServiceException, SdkClientException, SnsException {
-        if (publishRequest == null || StringUtils.isEmpty(publishRequest.message())) {
+    public PublishResponse publish(PublishRequest publishRequest) {
+        if (publishRequest == null || StringUtils.isNullOrEmpty(publishRequest.message())) {
             return super.publish(publishRequest);
         }
 
-        if (!StringUtils.isEmpty(publishRequest.messageStructure()) &&
+        if (!StringUtils.isNullOrEmpty(publishRequest.messageStructure()) &&
                 publishRequest.messageStructure().equals(MULTIPLE_PROTOCOL_MESSAGE_STRUCTURE)) {
             String errorMessage = "SNS extended client does not support sending JSON messages.";
             LOGGER.error(errorMessage);
-            throw SdkClientException.create(errorMessage);
+            throw new AmazonClientException(errorMessage);
         }
 
         PublishRequest.Builder publishRequestBuilder = publishRequest.toBuilder();
@@ -155,7 +127,7 @@ public class AmazonSNSExtendedClient extends AmazonSNSExtendedClientBase {
                     + "] exceeds the maximum allowed for large-payload messages ["
                     + SQSExtendedClientConstants.MAX_ALLOWED_ATTRIBUTES + "].";
             LOGGER.error(errorMessage);
-            throw SdkClientException.create(errorMessage);
+            throw new AmazonClientException(errorMessage);
         }
 
         MessageAttributeValue largePayloadAttributeName = messageAttributes.get(SQSExtendedClientConstants.RESERVED_ATTRIBUTE_NAME);
@@ -164,7 +136,7 @@ public class AmazonSNSExtendedClient extends AmazonSNSExtendedClientBase {
             String errorMessage = "Message attribute name " + SQSExtendedClientConstants.RESERVED_ATTRIBUTE_NAME
                     + " is reserved for use by SNS extended client.";
             LOGGER.error(errorMessage);
-            throw SdkClientException.create(errorMessage);
+            throw new AmazonClientException(errorMessage);
         }
     }
 
@@ -174,7 +146,7 @@ public class AmazonSNSExtendedClient extends AmazonSNSExtendedClientBase {
                     + " bytes which is larger than the threshold of " + snsExtendedClientConfiguration.getPayloadSizeThreshold()
                     + " Bytes. Consider including the payload in the message body instead of message attributes.";
             LOGGER.error(errorMessage);
-            throw SdkClientException.create(errorMessage);
+            throw new AmazonClientException(errorMessage);
         }
     }
 
@@ -212,13 +184,23 @@ public class AmazonSNSExtendedClient extends AmazonSNSExtendedClientBase {
         return messageAttributeSize;
     }
 
+    private static String getS3keyAttribute(Map<String, MessageAttributeValue> messageAttributes) {
+        if (messageAttributes != null && messageAttributes.containsKey(S3_KEY)) {
+            MessageAttributeValue attributeS3KeyValue = messageAttributes.get(S3_KEY);
+            return (attributeS3KeyValue == null) ? null : attributeS3KeyValue.getStringValue();
+        }
+        return null;
+    }
+
     private PublishRequest storeMessageInExtendedStore(PublishRequest publishRequest, long messageAttributeSize) {
         String messageContentStr = publishRequest.message();
         Long messageContentSize = Util.getStringSizeInBytes(messageContentStr);
+        String s3Key = getS3keyAttribute(publishRequest.messageAttributes()) ;
 
         PublishRequest.Builder publishRequestBuilder = publishRequest.toBuilder();
-        String largeMessagePointer = payloadStore.storeOriginalPayload(messageContentStr);
-        publishRequestBuilder.message(largeMessagePointer);
+        String largeMessagePointer = payloadStore.storeOriginalPayload(messageContentStr,
+                messageContentSize, s3Key);
+        publishRequest.setMessage(largeMessagePointer);
 
         MessageAttributeValue.Builder messageAttributeValueBuilder = MessageAttributeValue.builder();
         messageAttributeValueBuilder.dataType("Number");
